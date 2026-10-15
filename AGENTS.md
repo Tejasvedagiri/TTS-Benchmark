@@ -74,7 +74,8 @@ envs/, output/, archive/   generated or local only (git-ignored)
   and soundfile. Runners import nothing from `bench` (they run in another Python): only
   `_base.py` and the other `_*.py` helpers next to them.
 - **Everything resumes.** LLM answers are cached (`direction-cache.json`, `engine-cache.json`,
-  keyed by text + card + LLM model); segments are skipped when their wav exists; an env is
+  keyed by text + card + prompt + LLM model); a segment is skipped when its wav exists and was
+  rendered from the same engine-script row (`input` hash in segment-stats.json); an env is
   rebuilt only when its spec changes (`.ready` stamp).
 - **Never let a model run unbounded.** LLM calls carry `max_tokens` (thinking counts against
   it); runners are killed after `STALL_S` without progress, `LOAD_S` while loading, `MODEL_S`

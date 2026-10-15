@@ -9,6 +9,7 @@ run moves on. Model downloads go to $HF_HOME (torch and other caches inside it).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -527,6 +528,12 @@ def run_runner(model: str, work: Path, out_dir: Path, log) -> dict:
     return out
 
 
+def _row_hash(row: dict) -> str:
+    """What a segment was rendered from: a changed engine script re-renders it."""
+    key = {k: v for k, v in row.items() if k not in ("id", "empty")}
+    return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def render_model(
     model: str, tests: list[str], output: Path, listen_dir: Path, log, render: bool = True
 ) -> dict[str, dict]:
@@ -546,6 +553,13 @@ def render_model(
             row["empty"] = _is_empty(row, card.speaker_prefix)
         stats_path = model_dir / "segment-stats.json"
         stats = json.loads(stats_path.read_text(encoding="utf-8")) if stats_path.exists() else {}
+        for row in rows:  # rendered from something else (or the segment is now empty): redo
+            wav = model_dir / "segments" / f"{row['id']}.wav"
+            if wav.exists() and (
+                row["empty"] or stats.get(row["id"], {}).get("input") != _row_hash(row)
+            ):
+                wav.unlink()
+                stats.pop(row["id"], None)
         per_test[test] = (rows, stats)
         # one work list for every test: ids are paths under output/
         work += [{**r, "id": f"{test}/{model}/segments/{r['id']}"} for r in rows if not r["empty"]]
@@ -569,6 +583,9 @@ def render_model(
         model_dir = output / test / model
         prefix = f"{test}/{model}/segments/"
         new = {k[len(prefix) :]: v for k, v in run["stats"].items() if k.startswith(prefix)}
+        hashes = {r["id"]: _row_hash(r) for r in rows}
+        for sid, entry in new.items():
+            entry["input"] = hashes[sid]
         if new:
             stats.update(new)
             (model_dir / "segment-stats.json").write_text(
