@@ -170,3 +170,9 @@ output/
    one file per model and test; the results table and the listening page are written.
 
 To add a model, see [AGENTS.md](AGENTS.md).
+
+## Licence
+
+The benchmark code is [MIT](LICENSE). Each TTS model, its weights and the audio it makes are under
+that model's own licence (see the table above; several are non-commercial), and
+`vendor/breeze-tts` is under Breeze-TTS's licence.

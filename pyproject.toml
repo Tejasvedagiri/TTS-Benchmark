@@ -3,6 +3,8 @@ name = "tts-benchmark"
 version = "0.1.0"
 description = "Render one script with every open TTS model, side by side: an LLM labels the script and writes each engine's version, each engine runs in its own environment."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy",
