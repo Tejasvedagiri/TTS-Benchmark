@@ -1,0 +1,5 @@
+# The quick brown fox: plain narration, the control (no sounds, no acting)
+Narrator: The quick brown fox jumps over the lazy dog.
+Narrator: Pack my box with five dozen liquor jugs.
+Narrator: How vexingly quick daft zebras jump, while the wizard quickly jinxes the gnomes before they vaporize.
+Narrator: The five boxing wizards jump quickly, and a mad boxer shot a quick, gloved jab to the jaw of his dizzy opponent.

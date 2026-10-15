@@ -1,0 +1,11 @@
+# Per-model uv environments (tens of GB), outputs, local data
+envs/
+output/
+archive/
+vendor/tts-bench/
+# Python / tools
+.venv/
+__pycache__/
+.ruff_cache/
+.env
+.idea/

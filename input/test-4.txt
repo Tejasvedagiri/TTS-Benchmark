@@ -1,0 +1,8 @@
+# The elevator: a businessman mumbling his presentation to himself
+Narrator: *A busy office lobby. A man in a grey suit stares at the elevator doors, clutching a folder.*
+Businessman: *He mutters under his breath.* "Okay. Good morning, everyone. Thank you for... no. Morning, team."
+Businessman: "Q3 revenue is up twelve percent, driven by... um... driven by our, uh, our new..."
+Narrator: *He flips through the folder, panicking slightly.*
+Businessman: "Hmm. Hmm. Driven by the new enterprise accounts. Yes. Enterprise." *He exhales slowly.*
+Narrator: *The elevator dings.*
+Businessman: *He clears his throat and straightens his tie.* "Ahem. Showtime."

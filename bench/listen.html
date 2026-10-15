@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTS Listening Sheet</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #fff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2de;
+    --accent: #2b6cb0; --hl: #fff6d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618; --panel: #1f1f22; --text: #ececec; --muted: #9a9aa0; --line: #333338;
+      --accent: #6aa7ff; --hl: #3a3420;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 14px; color: var(--muted); }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .bar label { color: var(--muted); }
+  select, button, input { font: inherit; color: var(--text); }
+  select, button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+                   padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line);
+          border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 980px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left;
+           vertical-align: middle; }
+  th { position: sticky; top: 0; background: var(--panel); font-weight: 600; font-size: 13px;
+       cursor: pointer; user-select: none; white-space: nowrap; }
+  th.nosort { cursor: default; }
+  tr.playing td { background: var(--hl); }
+  .name { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12px; }
+  audio { width: 260px; height: 32px; display: block; }
+  input.score { width: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 5px;
+                background: var(--bg); text-align: center; }
+  input.notes { width: 100%; min-width: 160px; padding: 4px 6px; border: 1px solid var(--line);
+                border-radius: 5px; background: var(--bg); }
+  td.total { font-weight: 700; font-size: 15px; text-align: center; min-width: 56px; }
+  .missing { color: var(--muted); font-size: 12px; }
+  tr.struck td { opacity: 0.45; }
+  tr.struck .name { text-decoration: line-through; }
+  tr.struck td.strike { opacity: 1; }
+  button.x { padding: 3px 8px; font-size: 12px; }
+  #count { color: var(--muted); }
+  #status { font-weight: 600; }
+  #scriptbox { margin: 0 0 12px; }
+  #scriptbox summary { cursor: pointer; color: var(--muted); }
+  #script { white-space: pre-wrap; background: var(--panel); border: 1px solid var(--line);
+            border-radius: 8px; padding: 10px 12px; margin: 6px 0 0; font-size: 13px; }
+  #status.ok { color: #2f9e44; }
+  #status.bad { color: #e03131; }
+</style>
+</head>
+<body>
+<h1>TTS listening sheet</h1>
+<p class="sub">Score each column 0-10. Total adds them up (out of 40). Open the page with
+<code>uv run server</code> and every score is saved into this HTML file as you
+type. <span id="status"></span></p>
+
+<div class="bar">
+  <label for="clip">Clip:</label>
+  <select id="clip"></select>
+  <label for="by">Scores for:</label>
+  <select id="by">
+    <option value="clip">this clip</option>
+    <option value="all">the model overall</option>
+  </select>
+  <label><input type="checkbox" id="hide"> Hide struck off</label>
+  <span id="count"></span>
+  <button id="export">Export CSV</button>
+  <button id="exportJson">Export JSON</button>
+  <button id="import">Import JSON</button>
+  <input id="file" type="file" accept=".json" hidden>
+  <button id="clear">Clear scores</button>
+</div>
+
+<details id="scriptbox" open><summary>Script</summary><pre id="script"></pre></details>
+
+<div class="wrap">
+<table>
+  <thead>
+    <tr>
+      <th data-k="name">Voice</th>
+      <th class="nosort">Play</th>
+      <th data-k="natural">Natural sounding</th>
+      <th data-k="voicing">Voicing</th>
+      <th data-k="sounds">Other sounds</th>
+      <th data-k="background">Background</th>
+      <th data-k="total">Total</th>
+      <th class="nosort">Notes</th>
+      <th class="nosort">Strike off</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+
+<!-- Filled in by main.py (models and clips of this run); regenerating keeps the ratings. -->
+<script id="config" type="application/json">
+__CONFIG__
+</script>
+<!-- Ratings live here; `uv run server` rewrites this block on every change. -->
+<script id="ratings" type="application/json">
+{}
+</script>
+<script>
+const CONFIG = JSON.parse(document.getElementById("config").textContent);
+const MODELS = CONFIG.models;  // [[id, "size · licence · speed"], ...]
+for (const [file, label] of CONFIG.clips) {
+  document.getElementById("clip").append(new Option(label, file));
+}
+document.title = CONFIG.title;
+document.querySelector("h1").textContent = CONFIG.title;
+const COLS = ["natural", "voicing", "sounds", "background"];
+const KEY = "tts-listening-sheet:" + CONFIG.run;
+
+const $ = (id) => document.getElementById(id);
+
+// The scores embedded in this file are the source of truth. The browser keeps a backup copy, used
+// only when it is newer (edits made while the page was opened without uv run server).
+let embedded = {};
+try { embedded = JSON.parse($("ratings").textContent) || {}; } catch (e) { embedded = {}; }
+let backup = {};
+try { backup = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { backup = {}; }
+// the first version of this page kept the bare scores, with no timestamp
+if (!backup.scores && Object.keys(backup).length) backup = { savedAt: "0", scores: backup };
+const newest = (backup.savedAt || "") > (embedded.savedAt || "") ? backup : embedded;
+let store = newest.scores || {};
+let struck = newest.struck || {};  // model -> true: ruled out (for every clip)
+const SERVED = location.protocol.startsWith("http");
+
+function setStatus(text, cls) {
+  const s = $("status");
+  s.textContent = text;
+  s.className = cls || "";
+}
+let saveTimer = null;
+function save() {
+  const doc = { savedAt: new Date().toISOString(), scores: store, struck };
+  try { localStorage.setItem(KEY, JSON.stringify(doc)); } catch (e) {}
+  if (!SERVED) {
+    setStatus("Not saving to the file: opened directly, not through uv run server.", "bad");
+    return;
+  }
+  setStatus("Saving...");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      const r = await fetch("/save", { method: "POST", body: JSON.stringify(doc),
+                                       headers: { "Content-Type": "application/json" } });
+      if (!r.ok) throw new Error(r.status + " " + r.statusText);
+      setStatus("Saved to index.html at " + new Date().toLocaleTimeString() + ".", "ok");
+    } catch (e) {
+      setStatus("NOT saved to the file (is uv run server still running?): " + e.message, "bad");
+    }
+  }, 400);
+}
+if (!SERVED) setStatus("Opened directly: scores won't be saved into the file. Run uv run server.", "bad");
+else if (newest === backup && backup.savedAt) save();  // push unsaved browser edits into the file
+const clipSel = $("clip"), bySel = $("by"), tbody = $("rows");
+try {
+  clipSel.value = localStorage.getItem(KEY + ":clip") || clipSel.value;
+  bySel.value = localStorage.getItem(KEY + ":by") || bySel.value;
+} catch (e) {}
+
+function scope() { return bySel.value === "all" ? "all" : clipSel.value; }
+function entry(model, sc = scope()) {
+  store[sc] ??= {};
+  return (store[sc][model] ??= {});
+}
+function total(e) {
+  const vals = COLS.map((c) => e[c]).filter((v) => v !== undefined && v !== "");
+  return vals.length ? vals.reduce((a, b) => a + Number(b), 0) : "";
+}
+
+let sortKey = null, sortDir = 1;
+
+function showScript() {
+  const test = clipSel.value.replace(/(-scene-\d+)?\.wav$/, "");
+  const text = (CONFIG.scripts || {})[test] || "";
+  $("script").textContent = text.split("\n").filter((l) => !l.startsWith("#")).join("\n").trim();
+  $("scriptbox").hidden = !text;
+}
+
+function render() {
+  showScript();
+  const sc = scope();
+  let list = MODELS.map(([name, meta], i) => ({ name, meta, i, e: entry(name, sc) }));
+  if (sortKey) {
+    list.sort((a, b) => {
+      const va = sortKey === "name" ? a.name : sortKey === "total" ? total(a.e) : a.e[sortKey];
+      const vb = sortKey === "name" ? b.name : sortKey === "total" ? total(b.e) : b.e[sortKey];
+      const ea = va === undefined || va === "", eb = vb === undefined || vb === "";
+      if (ea !== eb) return ea ? 1 : -1;  // unrated last
+      if (sortKey === "name") return sortDir * va.localeCompare(vb);
+      return sortDir * (Number(vb) - Number(va));
+    });
+  }
+  const hide = $("hide").checked;
+  const out = MODELS.filter(([n]) => struck[n]).length;
+  $("count").textContent = `${MODELS.length - out} of ${MODELS.length} still in`;
+  tbody.innerHTML = "";
+  for (const { name, meta, e } of list) {
+    if (hide && struck[name]) continue;
+    const tr = document.createElement("tr");
+    if (struck[name]) tr.className = "struck";
+    tr.innerHTML =
+      `<td><div class="name">${name}</div><div class="meta">${meta}</div></td>` +
+      `<td><audio controls preload="none" src="${name}/${clipSel.value}"></audio></td>` +
+      COLS.map((c) => `<td><input class="score" type="number" min="0" max="10" step="0.5"
+        data-c="${c}" value="${e[c] ?? ""}"></td>`).join("") +
+      `<td class="total">${total(e)}</td>` +
+      `<td><input class="notes" data-c="notes" value="${(e.notes ?? "").replace(/"/g, "&quot;")}"></td>` +
+      `<td class="strike"><button class="x">${struck[name] ? "Bring back" : "Strike off"}</button></td>`;
+    tr.querySelector("button.x").addEventListener("click", () => {
+      if (struck[name]) delete struck[name]; else struck[name] = true;
+      save(); render();
+    });
+    const audio = tr.querySelector("audio");
+    audio.addEventListener("play", () => {
+      document.querySelectorAll("audio").forEach((a) => { if (a !== audio) a.pause(); });
+      document.querySelectorAll("tr.playing").forEach((r) => r.classList.remove("playing"));
+      tr.classList.add("playing");
+    });
+    audio.addEventListener("error", () => {
+      audio.replaceWith(Object.assign(document.createElement("span"),
+        { className: "missing", textContent: "no file for this clip" }));
+    });
+    tr.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => {
+      const en = entry(name);
+      let v = inp.value;
+      if (inp.dataset.c !== "notes" && v !== "") {
+        v = Math.min(10, Math.max(0, Number(v)));
+      }
+      if (v === "") delete en[inp.dataset.c]; else en[inp.dataset.c] = v;
+      tr.querySelector(".total").textContent = total(en);
+      save();
+    }));
+    tbody.appendChild(tr);
+  }
+}
+
+document.querySelectorAll("th[data-k]").forEach((th) => th.addEventListener("click", () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+  render();
+}));
+$("hide").addEventListener("change", () => {
+  try { localStorage.setItem(KEY + ":hide", $("hide").checked ? "1" : ""); } catch (e) {}
+  render();
+});
+try { $("hide").checked = !!localStorage.getItem(KEY + ":hide"); } catch (e) {}
+clipSel.addEventListener("change", () => {
+  try { localStorage.setItem(KEY + ":clip", clipSel.value); } catch (e) {}
+  render();
+});
+bySel.addEventListener("change", () => {
+  try { localStorage.setItem(KEY + ":by", bySel.value); } catch (e) {}
+  render();
+});
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$("export").addEventListener("click", () => {
+  const head = ["scope", "model", "natural", "voicing", "other_sounds", "background", "total", "notes",
+                "struck_off"];
+  const lines = [head.join(",")];
+  for (const sc of Object.keys(store)) {
+    for (const [name] of MODELS) {
+      const e = store[sc][name];
+      if (!e || !Object.keys(e).length) continue;
+      const notes = `"${(e.notes ?? "").replace(/"/g, '""')}"`;
+      lines.push([sc, name, ...COLS.map((c) => e[c] ?? ""), total(e), notes,
+                  struck[name] ? "yes" : ""].join(","));
+    }
+  }
+  download("tts-ratings.csv", lines.join("\n") + "\n", "text/csv");
+});
+$("exportJson").addEventListener("click", () =>
+  download("tts-ratings.json", JSON.stringify({ scores: store, struck }, null, 1),
+                                        "application/json"));
+$("import").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.scores) { store = d.scores; struck = d.struck || {}; } else store = d;
+    save(); render();
+  }
+  catch (e) { console.error("not a ratings JSON file", e); }
+  ev.target.value = "";
+});
+$("clear").addEventListener("click", () => {
+  const btn = $("clear");
+  if (btn.dataset.armed) {
+    delete store[scope()]; save(); render();
+    btn.textContent = "Clear scores"; delete btn.dataset.armed;
+  } else {
+    btn.textContent = "Click again to clear this view"; btn.dataset.armed = "1";
+    setTimeout(() => { btn.textContent = "Clear scores"; delete btn.dataset.armed; }, 3000);
+  }
+});
+
+render();
+</script>
+</body>
+</html>
